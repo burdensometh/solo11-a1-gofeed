@@ -113,6 +113,52 @@ feed, _ := fp.ParseURL("http://feeds.twit.tv/twit.xml")
 fmt.Println(feed.Title)
 ```
 
+### Parsing Many Sources at Once
+
+`gofeed.Batch` parses many sources concurrently and keeps every source's
+result separate: each attempt gets its own body buffer, its own parser and its
+own result slot, and results are keyed by a required, unique `Source.ID`.
+
+```go
+batch := gofeed.NewBatch(gofeed.BatchOptions{
+	BatchID:     "run-42", // labels every trace event
+	Concurrency: 8,
+	MaxAttempts: 2,
+	Fetcher:     gofeed.HTTPFetcher{UserAgent: "MyCustomAgent 1.0"},
+	// Reject a feed whose content does not belong to its source.
+	Verify: func(src gofeed.Source, feed *gofeed.Feed) error {
+		if feed.Title != src.ID {
+			return fmt.Errorf("%q came back under %q", feed.Title, src.ID)
+		}
+		return nil
+	},
+	// Emit one event per stage for logging/journaling.
+	Trace: func(e gofeed.TraceEvent) {
+		log.Printf("%s %s attempt %d %s %dms", e.SourceID, e.Stage, e.Attempt, e.AttemptID, e.Duration.Milliseconds())
+	},
+})
+
+res, err := batch.Parse(ctx, []gofeed.Source{
+	{ID: "twit", URL: "http://feeds.twit.tv/twit.xml"},
+	{ID: "nasa", URL: "https://www.nasa.gov/rss/dyn/breaking_news.rss"},
+})
+if err != nil {
+	log.Fatal(err) // invalid source IDs
+}
+feed, ok := res.Feed("twit")
+if !ok {
+	if sr, found := res.Result("twit"); found {
+		log.Printf("twit failed: %v", sr.Err)
+	}
+}
+```
+
+A source that ends up holding another source's content fails instead of
+silently returning it. Every failure carries an `*gofeed.MixError` naming the
+stage (`fetch`, `detect`, `parse`, `verify` or `assemble`) that introduced the
+mixing, along with the digests recorded at each earlier stage, so the trace
+identifies the step that mixed the data.
+
 ### Feed Specific Parsers
 
 If you have a usage scenario that requires a specialized parser:
