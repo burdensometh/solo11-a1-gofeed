@@ -19,7 +19,7 @@ func BenchmarkParseExtensionFragmentedText(b *testing.B) {
 			b.SetBytes(int64(len(doc)))
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				p := NewXMLParser(strings.NewReader(doc))
+				p, _ := NewXMLParser(strings.NewReader(doc))
 				if _, err := FindRoot(p); err != nil {
 					b.Fatal(err)
 				}
@@ -39,7 +39,7 @@ func BenchmarkParseExtensionFragmentedText(b *testing.B) {
 // given local name.
 func parserOn(t *testing.T, doc, name string) *xpp.Parser {
 	t.Helper()
-	p := NewXMLParser(strings.NewReader(doc))
+	p, _ := NewXMLParser(strings.NewReader(doc))
 	for {
 		tok, err := p.NextToken()
 		if err != nil {
@@ -103,7 +103,7 @@ func TestParseExtension(t *testing.T) {
 		</channel>
 	</rss>`
 
-	p := NewXMLParser(strings.NewReader(doc))
+	p, _ := NewXMLParser(strings.NewReader(doc))
 	extensions := ext.Extensions{}
 	for {
 		tok, err := p.NextToken()

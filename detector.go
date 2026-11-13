@@ -54,7 +54,7 @@ loop:
 
 	if firstChar == '<' {
 		// Check if it's an XML based feed
-		p := shared.NewXMLParser(bytes.NewReader(buffer.Bytes()))
+		p, _ := shared.NewXMLParser(bytes.NewReader(buffer.Bytes()))
 
 		_, err := shared.FindRoot(p)
 		if err != nil {

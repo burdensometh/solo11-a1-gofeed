@@ -1,36 +1,50 @@
 package shared
 
-import "io"
+import (
+	"io"
+	"log"
+)
 
-// NewControlCharFilterReader wraps r and drops the C0 control bytes that are
-// illegal in XML (bytes below 0x20 other than tab, LF, and CR). Those byte
-// values are identical across UTF-8 and the single-byte encodings feeds use,
-// and never occur inside a multi-byte UTF-8 sequence, so filtering them on the
-// raw stream is safe regardless of the declared encoding. This lets feeds with
-// stray control characters parse instead of failing outright.
-func NewControlCharFilterReader(r io.Reader) io.Reader {
-	return &controlCharFilter{r: r}
+// ControlCharSanitizer wraps a reader and rewrites the C0 control characters
+// that XML 1.0 forbids — 0x00-0x1F except tab, LF and CR — into spaces as
+// they are read, counting each replacement. It runs on the transcoded UTF-8
+// stream (see NewXMLParser), where those byte values only ever denote the
+// control characters themselves: multi-byte UTF-8 sequences consist solely of
+// bytes >= 0x80, so rewriting single bytes cannot corrupt a character.
+// Replacing (rather than dropping) keeps offsets stable and lets malformed
+// feeds parse instead of failing outright.
+type ControlCharSanitizer struct {
+	r        io.Reader
+	replaced int
 }
 
-type controlCharFilter struct {
-	r io.Reader
+// NewControlCharSanitizer returns a reader that sanitizes r's output.
+func NewControlCharSanitizer(r io.Reader) *ControlCharSanitizer {
+	return &ControlCharSanitizer{r: r}
 }
 
-func (c *controlCharFilter) Read(p []byte) (int, error) {
-	for {
-		n, err := c.r.Read(p)
-		w := 0
-		for i := 0; i < n; i++ {
-			if b := p[i]; b < 0x20 && b != 0x09 && b != 0x0A && b != 0x0D {
-				continue
-			}
-			p[w] = p[i]
-			w++
+func (c *ControlCharSanitizer) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	for i := 0; i < n; i++ {
+		if b := p[i]; b < 0x20 && b != '\t' && b != '\n' && b != '\r' {
+			p[i] = ' '
+			c.replaced++
 		}
-		// Avoid returning (0, nil), which is discouraged for io.Reader: if this
-		// read was entirely illegal bytes, read again.
-		if w > 0 || err != nil {
-			return w, err
-		}
+	}
+	return n, err
+}
+
+// Replaced reports how many control characters have been rewritten so far.
+// Call it once parsing is finished (or abandoned) to get the final count.
+func (c *ControlCharSanitizer) Replaced() int {
+	return c.replaced
+}
+
+// LogSanitized records how many control characters s rewrote, if any. kind
+// names the feed format for the log message ("rss", "atom"). Parsing is never
+// interrupted: the count is only observed and logged after the fact.
+func LogSanitized(s *ControlCharSanitizer, kind string) {
+	if n := s.Replaced(); n > 0 {
+		log.Printf("gofeed: %s feed contained %d control characters disallowed by XML 1.0; replaced with spaces", kind, n)
 	}
 }

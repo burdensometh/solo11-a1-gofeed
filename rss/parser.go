@@ -27,8 +27,8 @@ type Parser struct{}
 
 // Parse parses an xml feed into an rss.Feed
 func (rp *Parser) Parse(feed io.Reader) (*Feed, error) {
-	feed = shared.NewControlCharFilterReader(feed)
-	p := shared.NewXMLParser(feed)
+	p, sanitizer := shared.NewXMLParser(feed)
+	defer shared.LogSanitized(sanitizer, "rss")
 
 	_, err := shared.FindRoot(p)
 	if err != nil {
